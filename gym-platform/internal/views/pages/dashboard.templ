@@ -1,0 +1,33 @@
+package pages
+
+import (
+	"github.com/12sub/gym-platform/components/card"
+	"github.com/12sub/gym-platform/internal/views/layouts"
+)
+
+templ Dashboard(p layouts.Page) {
+	@layouts.App(p) {
+		<div class="space-y-6">
+			@pageHeader("Dashboard", "A quick look at how the gym is doing.")
+			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+				@statCard("Revenue today", "—")
+				@statCard("Revenue this month", "—")
+				@statCard("Active members", "—")
+				@statCard("Open tickets", "—")
+			</div>
+		</div>
+	}
+}
+
+templ statCard(title string, value string) {
+	@card.Card() {
+		@card.Header() {
+			@card.Description() {
+				{ title }
+			}
+			@card.Title() {
+				{ value }
+			}
+		}
+	}
+}

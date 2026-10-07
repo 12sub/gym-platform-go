@@ -1,0 +1,29 @@
+package layouts
+
+import (
+	"github.com/12sub/gym-platform/components/dialog"
+	"github.com/12sub/gym-platform/components/input"
+	"github.com/12sub/gym-platform/components/label"
+	"github.com/12sub/gym-platform/components/sidebar"
+)
+
+templ Base(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } | Gym Platform</title>
+			<link href="/assets/css/output.css" rel="stylesheet"/>
+			<script src="/assets/js/htmx.min.js" defer></script>
+			<script src="/assets/js/app.js" defer></script>
+			@input.Script()
+			@label.Script()
+			@sidebar.Script()
+			@dialog.Script()
+		</head>
+		<body class="min-h-screen bg-background text-foreground antialiased">
+			{ children... }
+		</body>
+	</html>
+}

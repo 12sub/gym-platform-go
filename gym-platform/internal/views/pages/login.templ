@@ -1,0 +1,82 @@
+package pages
+
+import (
+	"github.com/12sub/gym-platform/components/alert"
+	"github.com/12sub/gym-platform/components/button"
+	"github.com/12sub/gym-platform/components/card"
+	"github.com/12sub/gym-platform/components/input"
+	"github.com/12sub/gym-platform/components/label"
+	"github.com/12sub/gym-platform/internal/views/layouts"
+)
+
+type LoginProps struct {
+	Email string
+	Error string
+}
+
+templ Login(p LoginProps) {
+	@layouts.Base("Log in") {
+		<main class="flex min-h-screen items-center justify-center bg-muted/40 px-4 py-12">
+			<div class="w-full max-w-sm">
+				<div class="mb-6 text-center">
+					<h1 class="text-2xl font-semibold tracking-tight">Gym Platform</h1>
+				</div>
+				@card.Card() {
+					@card.Header() {
+						@card.Title() {
+							Welcome back
+						}
+						@card.Description() {
+							Sign in to the staff dashboard
+						}
+					}
+					@card.Content() {
+						<form method="POST" action="/login" class="space-y-4">
+							if p.Error != "" {
+								@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+									@alert.Description() {
+										{ p.Error }
+									}
+								}
+							}
+							<div class="space-y-2">
+								@label.Label(label.Props{For: "email"}) {
+									Email
+								}
+								@input.Input(input.Props{
+									ID:          "email",
+									Name:        "email",
+									Type:        input.TypeEmail,
+									Value:       p.Email,
+									Placeholder: "you@yourgym.com",
+									Attributes: templ.Attributes{
+										"required":     true,
+										"autocomplete": "email",
+										"autofocus":    true,
+									},
+								})
+							</div>
+							<div class="space-y-2">
+								@label.Label(label.Props{For: "password"}) {
+									Password
+								}
+								@input.Input(input.Props{
+									ID:   "password",
+									Name: "password",
+									Type: input.TypePassword,
+									Attributes: templ.Attributes{
+										"required":     true,
+										"autocomplete": "current-password",
+									},
+								})
+							</div>
+							@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
+								Log in
+							}
+						</form>
+					}
+				}
+			</div>
+		</main>
+	}
+}

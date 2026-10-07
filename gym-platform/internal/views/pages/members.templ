@@ -1,0 +1,363 @@
+package pages
+
+import (
+	"fmt"
+	"net/url"
+	"strconv"
+
+	"github.com/12sub/gym-platform/components/button"
+	"github.com/12sub/gym-platform/components/dialog"
+	"github.com/12sub/gym-platform/components/input"
+	"github.com/12sub/gym-platform/components/table"
+	"github.com/12sub/gym-platform/internal/views/layouts"
+)
+
+type MemberRow struct {
+	ID       int64
+	Code     string
+	Name     string
+	Email    string
+	Phone    string
+	Plan     string
+	State    string // active | expired | frozen | pending | none
+	EndsOn   string
+	IsActive bool
+}
+
+type MembersFilter struct {
+	Search string
+	Status string // all | active | expired | none
+	Page   int
+}
+
+// URL builds the list address for a given page, keeping the search and filter.
+func (f MembersFilter) URL(page int) string {
+	v := url.Values{}
+	if f.Search != "" {
+		v.Set("q", f.Search)
+	}
+	if f.Status != "" && f.Status != "all" {
+		v.Set("status", f.Status)
+	}
+	if page > 1 {
+		v.Set("page", strconv.Itoa(page))
+	}
+	if len(v) == 0 {
+		return "/members"
+	}
+	return "/members?" + v.Encode()
+}
+
+type MemberFormData struct {
+	ID             int64 // 0 means a new member
+	FullName       string
+	Phone          string
+	Email          string
+	DateOfBirth    string
+	EmergencyName  string
+	EmergencyPhone string
+	JoinedOn       string
+	Errors         map[string]string
+}
+
+func (f MemberFormData) Title() string {
+	if f.ID == 0 {
+		return "New member"
+	}
+	return "Edit member"
+}
+
+func (f MemberFormData) Action() string {
+	if f.ID == 0 {
+		return "/members"
+	}
+	return fmt.Sprintf("/members/%d", f.ID)
+}
+
+templ MembersPage(p layouts.Page, f MembersFilter, rows []MemberRow, hasNext bool, canManage bool) {
+	@layouts.App(p) {
+		<div class="space-y-6">
+			@pageHeader("Members", "Everyone registered at the gym and where their membership stands.") {
+				if canManage {
+					@button.Button(button.Props{
+						Attributes: openDialogAttrs("/members/new", "member-dialog-body", "member-dialog"),
+					}) {
+						New member
+					}
+				}
+			}
+			<div class="flex flex-wrap gap-3">
+				<div class="w-full sm:max-w-sm">
+					@input.Input(input.Props{
+						ID:          "member-search",
+						Name:        "q",
+						Value:       f.Search,
+						Placeholder: "Search name, phone or member ID",
+						Attributes: templ.Attributes{
+							"hx-get":      "/members",
+							"hx-target":   "#members-results",
+							"hx-swap":     "outerHTML",
+							"hx-trigger":  "input changed delay:300ms, search",
+							"hx-include":  "#member-status",
+							"hx-push-url": "true",
+							"autocomplete": "off",
+						},
+					})
+				</div>
+				<select
+					id="member-status"
+					name="status"
+					class={ fieldClass + " w-auto" }
+					hx-get="/members"
+					hx-target="#members-results"
+					hx-swap="outerHTML"
+					hx-include="#member-search"
+					hx-push-url="true"
+				>
+					<option value="all" selected?={ f.Status == "all" }>All members</option>
+					<option value="active" selected?={ f.Status == "active" }>Active</option>
+					<option value="expired" selected?={ f.Status == "expired" }>Expired</option>
+					<option value="none" selected?={ f.Status == "none" }>No plan</option>
+				</select>
+			</div>
+			@MembersResults(f, rows, hasNext, canManage)
+		</div>
+		@dialog.Dialog(dialog.Props{ID: "member-dialog"}) {
+			@dialog.Content() {
+				<div id="member-dialog-body"></div>
+			}
+		}
+	}
+}
+
+templ MembersResults(f MembersFilter, rows []MemberRow, hasNext bool, canManage bool) {
+	<div id="members-results" class="space-y-3">
+		<div class="rounded-lg border">
+			if len(rows) == 0 {
+				<p class="p-8 text-center text-sm text-muted-foreground">
+					No members match. Try a different search, or register a new member.
+				</p>
+			} else {
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head() {
+								Member
+							}
+							@table.Head() {
+								Phone
+							}
+							@table.Head() {
+								Plan
+							}
+							@table.Head() {
+								Status
+							}
+							if canManage {
+								@table.Head() {
+									Actions
+								}
+							}
+						}
+					}
+					@table.Body() {
+						for _, m := range rows {
+							@table.Row() {
+								@table.Cell() {
+									<div class="flex items-center gap-2">
+										<span class="font-medium">{ m.Name }</span>
+										if !m.IsActive {
+											@pill("muted", "Deactivated")
+										}
+									</div>
+									<div class="text-xs text-muted-foreground">
+										{ m.Code }
+										if m.Email != "" {
+											· { m.Email }
+										}
+									</div>
+								}
+								@table.Cell() {
+									{ m.Phone }
+								}
+								@table.Cell() {
+									if m.Plan == "" {
+										<span class="text-muted-foreground">—</span>
+									} else {
+										{ m.Plan }
+									}
+								}
+								@table.Cell() {
+									@memberState(m.State)
+									if m.EndsOn != "" {
+										<div class="mt-0.5 text-xs text-muted-foreground">until { m.EndsOn }</div>
+									}
+								}
+								if canManage {
+									@table.Cell() {
+										<div class="flex gap-2">
+											@button.Button(button.Props{
+												Variant:    button.VariantOutline,
+												Size:       button.SizeSm,
+												Attributes: openDialogAttrs(fmt.Sprintf("/members/%d/edit", m.ID), "member-dialog-body", "member-dialog"),
+											}) {
+												Edit
+											}
+											@button.Button(button.Props{
+												Variant: button.VariantGhost,
+												Size:    button.SizeSm,
+												Attributes: templ.Attributes{
+													"hx-post":   fmt.Sprintf("/members/%d/toggle", m.ID),
+													"hx-target": "#members-results",
+													"hx-swap":   "outerHTML",
+												},
+											}) {
+												if m.IsActive {
+													Deactivate
+												} else {
+													Activate
+												}
+											}
+										</div>
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		</div>
+		if f.Page > 1 || hasNext {
+			<div class="flex items-center justify-between">
+				<span class="text-sm text-muted-foreground">Page { strconv.Itoa(f.Page) }</span>
+				<div class="flex gap-2">
+					if f.Page > 1 {
+						@button.Button(button.Props{
+							Variant: button.VariantOutline,
+							Size:    button.SizeSm,
+							Attributes: templ.Attributes{
+								"hx-get":      f.URL(f.Page - 1),
+								"hx-target":   "#members-results",
+								"hx-swap":     "outerHTML",
+								"hx-push-url": "true",
+							},
+						}) {
+							Previous
+						}
+					}
+					if hasNext {
+						@button.Button(button.Props{
+							Variant: button.VariantOutline,
+							Size:    button.SizeSm,
+							Attributes: templ.Attributes{
+								"hx-get":      f.URL(f.Page + 1),
+								"hx-target":   "#members-results",
+								"hx-swap":     "outerHTML",
+								"hx-push-url": "true",
+							},
+						}) {
+							Next
+						}
+					}
+				</div>
+			</div>
+		}
+	</div>
+}
+
+templ memberState(state string) {
+	switch state {
+		case "active":
+			@pill("green", "Active")
+		case "expired":
+			@pill("red", "Expired")
+		case "frozen":
+			@pill("amber", "Frozen")
+		case "pending":
+			@pill("amber", "Pending")
+		default:
+			@pill("muted", "No plan")
+	}
+}
+
+templ MemberForm(f MemberFormData) {
+	<form
+		id="member-form"
+		hx-post={ f.Action() }
+		hx-target="#member-dialog-body"
+		hx-swap="innerHTML"
+		class="space-y-4"
+	>
+		<h2 class="text-lg font-semibold">{ f.Title() }</h2>
+		@formField("member-name", "Full name", f.Errors["full_name"]) {
+			@input.Input(input.Props{
+				ID:         "member-name",
+				Name:       "full_name",
+				Value:      f.FullName,
+				HasError:   f.Errors["full_name"] != "",
+				Attributes: templ.Attributes{"required": true, "maxlength": "100"},
+			})
+		}
+		<div class="grid gap-4 sm:grid-cols-2">
+			@formField("member-phone", "Phone", f.Errors["phone"]) {
+				@input.Input(input.Props{
+					ID:          "member-phone",
+					Name:        "phone",
+					Value:       f.Phone,
+					Placeholder: "0803 000 0000",
+					HasError:    f.Errors["phone"] != "",
+					Attributes:  templ.Attributes{"required": true, "inputmode": "tel"},
+				})
+			}
+			@formField("member-email", "Email (optional)", f.Errors["email"]) {
+				@input.Input(input.Props{
+					ID:       "member-email",
+					Name:     "email",
+					Type:     input.TypeEmail,
+					Value:    f.Email,
+					HasError: f.Errors["email"] != "",
+				})
+			}
+			@formField("member-dob", "Date of birth (optional)", f.Errors["date_of_birth"]) {
+				@input.Input(input.Props{
+					ID:       "member-dob",
+					Name:     "date_of_birth",
+					Type:     input.TypeDate,
+					Value:    f.DateOfBirth,
+					HasError: f.Errors["date_of_birth"] != "",
+				})
+			}
+			@formField("member-joined", "Joined on", f.Errors["joined_on"]) {
+				@input.Input(input.Props{
+					ID:         "member-joined",
+					Name:       "joined_on",
+					Type:       input.TypeDate,
+					Value:      f.JoinedOn,
+					HasError:   f.Errors["joined_on"] != "",
+					Attributes: templ.Attributes{"required": true},
+				})
+			}
+			@formField("member-ec-name", "Emergency contact name", f.Errors["emergency_name"]) {
+				@input.Input(input.Props{
+					ID:    "member-ec-name",
+					Name:  "emergency_name",
+					Value: f.EmergencyName,
+				})
+			}
+			@formField("member-ec-phone", "Emergency contact phone", f.Errors["emergency_phone"]) {
+				@input.Input(input.Props{
+					ID:         "member-ec-phone",
+					Name:       "emergency_phone",
+					Value:      f.EmergencyPhone,
+					HasError:   f.Errors["emergency_phone"] != "",
+					Attributes: templ.Attributes{"inputmode": "tel"},
+				})
+			}
+		</div>
+		<div class="flex justify-end pt-2">
+			@button.Button(button.Props{Type: button.TypeSubmit}) {
+				Save member
+			}
+		</div>
+	</form>
+}

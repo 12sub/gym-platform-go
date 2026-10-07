@@ -1,0 +1,56 @@
+package pages
+
+import "github.com/12sub/gym-platform/components/label"
+
+// Used by selects and textareas, which match templUI's input styling.
+const fieldClass = "flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+
+templ pageHeader(title string, subtitle string) {
+	<div class="flex flex-wrap items-start justify-between gap-3">
+		<div>
+			<h1 class="text-2xl font-semibold tracking-tight">{ title }</h1>
+			<p class="text-sm text-muted-foreground">{ subtitle }</p>
+		</div>
+		{ children... }
+	</div>
+}
+
+templ formField(id string, labelText string, errMsg string) {
+	<div class="space-y-1.5">
+		@label.Label(label.Props{For: id}) {
+			{ labelText }
+		}
+		{ children... }
+		if errMsg != "" {
+			<p class="text-sm text-destructive">{ errMsg }</p>
+		}
+	</div>
+}
+
+templ pill(tone string, text string) {
+	<span class={ pillClass(tone) }>{ text }</span>
+}
+
+func pillClass(tone string) string {
+	base := "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium "
+	switch tone {
+	case "green":
+		return base + "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+	case "red":
+		return base + "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+	case "amber":
+		return base + "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+	default:
+		return base + "bg-muted text-muted-foreground"
+	}
+}
+
+// openDialogAttrs makes a button load a form from the server into a dialog and open it.
+func openDialogAttrs(url, bodyID, dialogID string) templ.Attributes {
+	return templ.Attributes{
+		"hx-get":               url,
+		"hx-target":            "#" + bodyID,
+		"hx-swap":              "innerHTML",
+		"hx-on::after-request": "if (event.detail.successful) window.tui.dialog.open('" + dialogID + "')",
+	}
+}

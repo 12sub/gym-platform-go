@@ -1,0 +1,120 @@
+package layouts
+
+import "github.com/12sub/gym-platform/components/sidebar"
+
+templ App(p Page) {
+	@Base(p.Title) {
+		@sidebar.Layout() {
+			@sidebar.Sidebar(sidebar.Props{
+				Collapsible: sidebar.CollapsibleIcon,
+				Collapsed:   p.SidebarCollapsed,
+			}) {
+				@sidebar.Header() {
+					<div class="flex items-center gap-2 px-2 py-1.5">
+						<div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">G</div>
+						<span class="truncate font-semibold tracking-tight">Gym Platform</span>
+					</div>
+				}
+				@sidebar.Content() {
+					for _, g := range Nav {
+						if g.HasVisible(p.RoleSlug) {
+							@sidebar.Group() {
+								@sidebar.GroupLabel() {
+									{ g.Label }
+								}
+								@sidebar.Menu() {
+									for _, it := range g.VisibleItems(p.RoleSlug) {
+										@sidebar.MenuItem() {
+											@sidebar.MenuButton(sidebar.MenuButtonProps{
+												Href:     it.Href,
+												IsActive: it.Key == p.Active,
+												Tooltip:  it.Label,
+											}) {
+												@NavIcon(it.Icon)
+												<span>{ it.Label }</span>
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+				@sidebar.Footer() {
+					<form method="POST" action="/logout">
+						@sidebar.MenuButton(sidebar.MenuButtonProps{
+							Tooltip:    "Log out",
+							Attributes: templ.Attributes{"type": "submit"},
+						}) {
+							@NavIcon("logout")
+							<span>Log out</span>
+						}
+					</form>
+				}
+			}
+			@sidebar.Inset() {
+				<header class="flex h-14 items-center gap-3 border-b px-4">
+					@sidebar.Trigger()
+					<span class="text-sm font-medium">{ p.Title }</span>
+					<div class="ml-auto text-right text-sm leading-tight">
+						<p class="font-medium">{ p.FullName }</p>
+						<p class="text-xs text-muted-foreground">{ p.RoleLabel }</p>
+					</div>
+				</header>
+				<div class="p-4 md:p-6">
+					{ children... }
+				</div>
+			}
+		}
+	}
+}
+
+templ NavIcon(name string) {
+	<svg class="size-4 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		switch name {
+			case "dashboard":
+				<rect width="7" height="9" x="3" y="3" rx="1"/>
+				<rect width="7" height="5" x="14" y="3" rx="1"/>
+				<rect width="7" height="9" x="14" y="12" rx="1"/>
+				<rect width="7" height="5" x="3" y="16" rx="1"/>
+			case "users":
+				<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+				<circle cx="9" cy="7" r="4"/>
+				<path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+				<path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+			case "tag":
+				<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/>
+				<circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>
+			case "banknote":
+				<rect width="20" height="12" x="2" y="6" rx="2"/>
+				<circle cx="12" cy="12" r="2"/>
+				<path d="M6 12h.01M18 12h.01"/>
+			case "ticket":
+				<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/>
+				<path d="M13 5v2"/>
+				<path d="M13 17v2"/>
+				<path d="M13 11v2"/>
+			case "file":
+				<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+				<path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+				<path d="M10 9H8"/>
+				<path d="M16 13H8"/>
+				<path d="M16 17H8"/>
+			case "shield":
+				<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+				<path d="m9 12 2 2 4-4"/>
+			case "building":
+				<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+				<path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
+				<path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
+				<path d="M10 6h4"/>
+				<path d="M10 10h4"/>
+				<path d="M10 14h4"/>
+				<path d="M10 18h4"/>
+			case "logout":
+				<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+				<polyline points="16 17 21 12 16 7"/>
+				<line x1="21" x2="9" y1="12" y2="12"/>
+		}
+	</svg>
+}

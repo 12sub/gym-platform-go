@@ -1,0 +1,215 @@
+package pages
+
+import (
+	"fmt"
+
+	"github.com/12sub/gym-platform/components/button"
+	"github.com/12sub/gym-platform/components/dialog"
+	"github.com/12sub/gym-platform/components/input"
+	"github.com/12sub/gym-platform/components/table"
+	"github.com/12sub/gym-platform/internal/views/layouts"
+)
+
+type PlanRow struct {
+	ID                int64
+	Name              string
+	Description       string
+	Price             string
+	DurationDays      int
+	IsActive          bool
+	ActiveSubscribers int64
+}
+
+type PlanFormData struct {
+	ID          int64 // 0 means a new plan
+	Name        string
+	Description string
+	Price       string
+	Duration    string
+	Errors      map[string]string
+}
+
+func (f PlanFormData) Title() string {
+	if f.ID == 0 {
+		return "New plan"
+	}
+	return "Edit plan"
+}
+
+func (f PlanFormData) Action() string {
+	if f.ID == 0 {
+		return "/plans"
+	}
+	return fmt.Sprintf("/plans/%d", f.ID)
+}
+
+templ PlansPage(p layouts.Page, rows []PlanRow, canManage bool) {
+	@layouts.App(p) {
+		<div class="space-y-6">
+			@pageHeader("Plans", "The membership plans people can subscribe to.") {
+				if canManage {
+					@button.Button(button.Props{
+						Attributes: openDialogAttrs("/plans/new", "plan-dialog-body", "plan-dialog"),
+					}) {
+						New plan
+					}
+				}
+			}
+			@PlansTable(rows, canManage)
+		</div>
+		@dialog.Dialog(dialog.Props{ID: "plan-dialog"}) {
+			@dialog.Content() {
+				<div id="member-dialog-body"></div>
+			}
+		}
+	}
+}
+
+templ PlansTable(rows []PlanRow, canManage bool) {
+	<div id="plans-table" class="rounded-lg border">
+		if len(rows) == 0 {
+			<p class="p-8 text-center text-sm text-muted-foreground">
+				No plans yet. Create your first plan to start selling memberships.
+			</p>
+		} else {
+			@table.Table() {
+				@table.Header() {
+					@table.Row() {
+						@table.Head() {
+							Plan
+						}
+						@table.Head() {
+							Price
+						}
+						@table.Head() {
+							Duration
+						}
+						@table.Head() {
+							Active subscribers
+						}
+						@table.Head() {
+							Status
+						}
+						if canManage {
+							@table.Head() {
+								Actions
+							}
+						}
+					}
+				}
+				@table.Body() {
+					for _, r := range rows {
+						@table.Row() {
+							@table.Cell() {
+								<div class="font-medium">{ r.Name }</div>
+								if r.Description != "" {
+									<div class="text-xs text-muted-foreground">{ r.Description }</div>
+								}
+							}
+							@table.Cell() {
+								{ r.Price }
+							}
+							@table.Cell() {
+								{ fmt.Sprintf("%d days", r.DurationDays) }
+							}
+							@table.Cell() {
+								{ fmt.Sprint(r.ActiveSubscribers) }
+							}
+							@table.Cell() {
+								if r.IsActive {
+									@pill("green", "Active")
+								} else {
+									@pill("muted", "Inactive")
+								}
+							}
+							if canManage {
+								@table.Cell() {
+									<div class="flex gap-2">
+										@button.Button(button.Props{
+											Variant:    button.VariantOutline,
+											Size:       button.SizeSm,
+											Attributes: openDialogAttrs(fmt.Sprintf("/plans/%d/edit", r.ID), "plan-dialog-body", "plan-dialog"),
+										}) {
+											Edit
+										}
+										@button.Button(button.Props{
+											Variant: button.VariantGhost,
+											Size:    button.SizeSm,
+											Attributes: templ.Attributes{
+												"hx-post":   fmt.Sprintf("/plans/%d/toggle", r.ID),
+												"hx-target": "#plans-table",
+												"hx-swap":   "outerHTML",
+											},
+										}) {
+											if r.IsActive {
+												Deactivate
+											} else {
+												Activate
+											}
+										}
+									</div>
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	</div>
+}
+
+templ PlanForm(f PlanFormData) {
+	<form
+		id="plan-form"
+		hx-post={ f.Action() }
+		hx-target="#plan-dialog-body"
+		hx-swap="innerHTML"
+		class="space-y-4"
+	>
+		<div>
+			<h2 class="text-lg font-semibold">{ f.Title() }</h2>
+			<p class="text-sm text-muted-foreground">Prices are in naira.</p>
+		</div>
+		@formField("plan-name", "Name", f.Errors["name"]) {
+			@input.Input(input.Props{
+				ID:          "plan-name",
+				Name:        "name",
+				Value:       f.Name,
+				Placeholder: "e.g. Monthly",
+				HasError:    f.Errors["name"] != "",
+				Attributes:  templ.Attributes{"required": true, "maxlength": "80"},
+			})
+		}
+		@formField("plan-description", "Description (optional)", f.Errors["description"]) {
+			<textarea id="plan-description" name="description" rows="3" class={ fieldClass }>{ f.Description }</textarea>
+		}
+		<div class="grid gap-4 sm:grid-cols-2">
+			@formField("plan-price", "Price (₦)", f.Errors["price"]) {
+				@input.Input(input.Props{
+					ID:          "plan-price",
+					Name:        "price",
+					Value:       f.Price,
+					Placeholder: "15000",
+					HasError:    f.Errors["price"] != "",
+					Attributes:  templ.Attributes{"required": true, "inputmode": "decimal"},
+				})
+			}
+			@formField("plan-duration", "Duration (days)", f.Errors["duration_days"]) {
+				@input.Input(input.Props{
+					ID:         "plan-duration",
+					Name:       "duration_days",
+					Type:       input.TypeNumber,
+					Value:      f.Duration,
+					HasError:   f.Errors["duration_days"] != "",
+					Attributes: templ.Attributes{"required": true, "min": "1", "max": "3660"},
+				})
+			}
+		</div>
+		<p class="text-xs text-muted-foreground">Monthly is 30 days, quarterly 90, annual 365.</p>
+		<div class="flex justify-end pt-2">
+			@button.Button(button.Props{Type: button.TypeSubmit}) {
+				Save plan
+			}
+		</div>
+	</form>
+}

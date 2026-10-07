@@ -1,0 +1,14 @@
+package pages
+
+import "github.com/12sub/gym-platform/internal/views/layouts"
+
+templ ComingSoon(p layouts.Page, blurb string) {
+	@layouts.App(p) {
+		<div class="space-y-6">
+			@pageHeader(p.Title, blurb)
+			<div class="rounded-lg border border-dashed p-12 text-center text-sm text-muted-foreground">
+				This section is coming in an upcoming step.
+			</div>
+		</div>
+	}
+}

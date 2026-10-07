@@ -1,0 +1,40 @@
+version: "3"
+
+dotenv: [".env"]
+
+tasks:
+  seed:
+     desc: Create or reset the Owner account from .env
+     cmds:
+       - go run ./cmd/seed
+
+  templ:
+    desc: Generate templates and run the app with hot reload
+    cmds:
+      - templ generate --watch --proxy="http://localhost:3333" --cmd="go run ./cmd/web" --open-browser=false
+
+  tailwind:
+    desc: Watch and compile Tailwind CSS
+    cmds:
+      - tailwindcss -i ./assets/css/input.css -o ./assets/css/output.css --watch
+
+  dev:
+    desc: Start everything for development
+    cmds:
+      - task --parallel tailwind templ
+
+  migrate-up:
+    cmds:
+      - goose -dir migrations postgres "$DATABASE_URL" up
+
+  migrate-down:
+    cmds:
+      - goose -dir migrations postgres "$DATABASE_URL" down
+
+  sqlc:
+    cmds:
+      - sqlc generate
+
+  test:
+      cmds:
+        - go test ./...
