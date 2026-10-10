@@ -48,6 +48,7 @@ type Payment struct {
 	PaidAt         *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	Note           *string
 }
 
 type Plan struct {
@@ -124,6 +125,7 @@ type Subscription struct {
 	CancelledAt *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	FrozenOn    *time.Time
 }
 
 type Ticket struct {

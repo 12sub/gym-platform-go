@@ -1,0 +1,401 @@
+package pages
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/12sub/gym-platform/components/alert"
+	"github.com/12sub/gym-platform/components/button"
+	"github.com/12sub/gym-platform/components/card"
+	"github.com/12sub/gym-platform/components/dialog"
+	"github.com/12sub/gym-platform/components/input"
+	"github.com/12sub/gym-platform/components/table"
+	"github.com/12sub/gym-platform/internal/views/layouts"
+)
+
+type MemberProfile struct {
+	ID             int64
+	Code           string
+	Name           string
+	Email          string
+	Phone          string
+	DateOfBirth    string
+	JoinedOn       string
+	EmergencyName  string
+	EmergencyPhone string
+	IsActive       bool
+}
+
+type SubRow struct {
+	ID       int64
+	Plan     string
+	Starts   string
+	Ends     string
+	Status   string // active | frozen | pending | expired | cancelled
+	DaysLeft int
+}
+
+type PaymentRow struct {
+	Date       string
+	Plan       string
+	Amount     string
+	Method     string
+	Status     string
+	Reference  string
+	Note       string
+	RecordedBy string
+}
+
+type MembershipData struct {
+	MemberID       int64
+	Summary        string
+	Blocked        string // why a subscription can't be added right now, if so
+	CanSubscribe   bool
+	SubscribeLabel string
+	CanManage      bool
+	ShowPayments   bool
+	Subs           []SubRow
+	Payments       []PaymentRow
+	Error          string
+}
+
+type PlanOption struct {
+	ID    int64
+	Label string
+	Price string // plain naira, for filling the amount box
+}
+
+type SubscriptionFormData struct {
+	MemberID int64
+	Plans    []PlanOption
+	PlanID   string
+	Amount   string
+	Method   string
+	Note     string
+	StartsOn string
+	Renewal  bool
+	Errors   map[string]string
+}
+
+templ MemberPage(p layouts.Page, m MemberProfile, d MembershipData) {
+	@layouts.App(p) {
+		<div class="space-y-6">
+			<a href="/members" class="text-sm text-muted-foreground hover:underline">← Members</a>
+			@pageHeader(m.Name, m.Code) {
+				if !m.IsActive {
+					@pill("muted", "Deactivated")
+				}
+			}
+			@card.Card() {
+				@card.Content() {
+					<dl class="grid gap-4 pt-6 text-sm sm:grid-cols-2 lg:grid-cols-4">
+						@detail("Phone", m.Phone)
+						@detail("Email", m.Email)
+						@detail("Joined", m.JoinedOn)
+						@detail("Date of birth", m.DateOfBirth)
+						@detail("Emergency contact", m.EmergencyName)
+						@detail("Emergency phone", m.EmergencyPhone)
+					</dl>
+				}
+			}
+			@MembershipPanel(d)
+		</div>
+		@dialog.Dialog(dialog.Props{ID: "subscription-dialog"}) {
+			@dialog.Content() {
+				<div id="subscription-dialog-body"></div>
+			}
+		}
+	}
+}
+
+templ detail(label string, value string) {
+	<div>
+		<dt class="text-muted-foreground">{ label }</dt>
+		<dd class="font-medium">
+			if value == "" {
+				—
+			} else {
+				{ value }
+			}
+		</dd>
+	</div>
+}
+
+// MembershipPanel is the part of the page that changes: it is redrawn after
+// every subscribe, freeze, unfreeze or cancel.
+templ MembershipPanel(d MembershipData) {
+	<div id="member-membership" class="space-y-6">
+		if d.Error != "" {
+			@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+				@alert.Description() {
+					{ d.Error }
+				}
+			}
+		}
+		@card.Card() {
+			@card.Header() {
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<div>
+						@card.Title() {
+							Membership
+						}
+						@card.Description() {
+							{ d.Summary }
+						}
+						if d.Blocked != "" {
+							<p class="mt-1 text-xs text-muted-foreground">{ d.Blocked }</p>
+						}
+					</div>
+					if d.CanSubscribe {
+						@button.Button(button.Props{
+							Attributes: openDialogAttrs(fmt.Sprintf("/members/%d/subscribe", d.MemberID), "subscription-dialog-body", "subscription-dialog"),
+						}) {
+							{ d.SubscribeLabel }
+						}
+					}
+				</div>
+			}
+		}
+		<div class="space-y-2">
+			<h2 class="text-lg font-semibold">Subscriptions</h2>
+			<div class="rounded-lg border">
+				if len(d.Subs) == 0 {
+					<p class="p-6 text-center text-sm text-muted-foreground">No subscriptions yet.</p>
+				} else {
+					@table.Table() {
+						@table.Header() {
+							@table.Row() {
+								@table.Head() {
+									Plan
+								}
+								@table.Head() {
+									Starts
+								}
+								@table.Head() {
+									Ends
+								}
+								@table.Head() {
+									Status
+								}
+								if d.CanManage {
+									@table.Head() {
+										Actions
+									}
+								}
+							}
+						}
+						@table.Body() {
+							for _, s := range d.Subs {
+								@table.Row() {
+									@table.Cell() {
+										{ s.Plan }
+									}
+									@table.Cell() {
+										{ s.Starts }
+									}
+									@table.Cell() {
+										{ s.Ends }
+									}
+									@table.Cell() {
+										@memberState(s.Status)
+									}
+									if d.CanManage {
+										@table.Cell() {
+											@subActions(s)
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			</div>
+		</div>
+		if d.ShowPayments {
+			<div class="space-y-2">
+				<h2 class="text-lg font-semibold">Payments</h2>
+				<div class="rounded-lg border">
+					if len(d.Payments) == 0 {
+						<p class="p-6 text-center text-sm text-muted-foreground">No payments recorded.</p>
+					} else {
+						@table.Table() {
+							@table.Header() {
+								@table.Row() {
+									@table.Head() {
+										Date
+									}
+									@table.Head() {
+										Plan
+									}
+									@table.Head() {
+										Amount
+									}
+									@table.Head() {
+										Method
+									}
+									@table.Head() {
+										Reference
+									}
+									@table.Head() {
+										Recorded by
+									}
+								}
+							}
+							@table.Body() {
+								for _, p := range d.Payments {
+									@table.Row() {
+										@table.Cell() {
+											{ p.Date }
+										}
+										@table.Cell() {
+											{ p.Plan }
+										}
+										@table.Cell() {
+											<span class="font-medium">{ p.Amount }</span>
+											if p.Status != "successful" {
+												@pill("amber", p.Status)
+											}
+										}
+										@table.Cell() {
+											{ p.Method }
+										}
+										@table.Cell() {
+											<div class="font-mono text-xs">{ p.Reference }</div>
+											if p.Note != "" {
+												<div class="text-xs text-muted-foreground">{ p.Note }</div>
+											}
+										}
+										@table.Cell() {
+											{ p.RecordedBy }
+										}
+									}
+								}
+							}
+						}
+					}
+				</div>
+			</div>
+		}
+	</div>
+}
+
+templ subActions(s SubRow) {
+	<div class="flex gap-2">
+		if s.Status == "active" {
+			@actionButton(fmt.Sprintf("/subscriptions/%d/freeze", s.ID), "Freeze", "Freeze this membership? The remaining days are added back when it is unfrozen.")
+		}
+		if s.Status == "frozen" {
+			@actionButton(fmt.Sprintf("/subscriptions/%d/unfreeze", s.ID), "Unfreeze", "")
+		}
+		if s.Status == "active" || s.Status == "frozen" || s.Status == "pending" {
+			@actionButton(fmt.Sprintf("/subscriptions/%d/cancel", s.ID), "Cancel", "Cancel this subscription? This can't be undone.")
+		}
+	</div>
+}
+
+templ actionButton(url string, label string, confirm string) {
+	@button.Button(button.Props{
+		Variant:    button.VariantOutline,
+		Size:       button.SizeSm,
+		Attributes: actionAttrs(url, confirm),
+	}) {
+		{ label }
+	}
+}
+
+func actionAttrs(url, confirm string) templ.Attributes {
+	a := templ.Attributes{
+		"hx-post":   url,
+		"hx-target": "#member-membership",
+		"hx-swap":   "outerHTML",
+	}
+	if confirm != "" {
+		a["hx-confirm"] = confirm
+	}
+	return a
+}
+
+templ SubscriptionForm(f SubscriptionFormData) {
+	<form
+		id="subscription-form"
+		hx-post={ fmt.Sprintf("/members/%d/subscribe", f.MemberID) }
+		hx-target="#subscription-dialog-body"
+		hx-swap="innerHTML"
+		class="space-y-4"
+	>
+		<div>
+			<h2 class="text-lg font-semibold">
+				if f.Renewal {
+					Renew membership
+				} else {
+					Add subscription
+				}
+			</h2>
+			if f.StartsOn != "" {
+				<p class="text-sm text-muted-foreground">Starts on { f.StartsOn }.</p>
+			}
+		</div>
+		if f.Errors["_"] != "" {
+			@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+				@alert.Description() {
+					{ f.Errors["_"] }
+				}
+			}
+		}
+		if len(f.Plans) == 0 {
+			<p class="text-sm text-muted-foreground">There are no active plans. Create one on the Plans page first.</p>
+		}
+		@formField("sub-plan", "Plan", f.Errors["plan_id"]) {
+			<select
+				id="sub-plan"
+				name="plan_id"
+				class={ fieldClass }
+				onchange="this.form.elements['amount'].value = this.selectedOptions[0].dataset.price"
+			>
+				for _, o := range f.Plans {
+					<option
+						value={ strconv.FormatInt(o.ID, 10) }
+						data-price={ o.Price }
+						selected?={ strconv.FormatInt(o.ID, 10) == f.PlanID }
+					>{ o.Label }</option>
+				}
+			</select>
+		}
+		<div class="grid gap-4 sm:grid-cols-2">
+			@formField("sub-amount", "Amount paid (₦)", f.Errors["amount"]) {
+				@input.Input(input.Props{
+					ID:         "sub-amount",
+					Name:       "amount",
+					Value:      f.Amount,
+					HasError:   f.Errors["amount"] != "",
+					Attributes: templ.Attributes{"required": true, "inputmode": "decimal"},
+				})
+			}
+			@formField("sub-method", "Paid by", f.Errors["method"]) {
+				<select id="sub-method" name="method" class={ fieldClass }>
+					<option value="cash" selected?={ f.Method == "cash" }>Cash</option>
+					<option value="transfer" selected?={ f.Method == "transfer" }>Bank transfer</option>
+					<option value="pos" selected?={ f.Method == "pos" }>POS</option>
+				</select>
+			}
+		</div>
+		@formField("sub-note", "Note (optional)", f.Errors["note"]) {
+			@input.Input(input.Props{
+				ID:          "sub-note",
+				Name:        "note",
+				Value:       f.Note,
+				Placeholder: "Receipt or transfer reference",
+				HasError:    f.Errors["note"] != "",
+				Attributes:  templ.Attributes{"maxlength": "200"},
+			})
+		}
+		<div class="flex justify-end pt-2">
+			@button.Button(button.Props{
+				Type:     button.TypeSubmit,
+				Disabled: f.Errors["_"] != "" || len(f.Plans) == 0,
+			}) {
+				Record payment
+			}
+		</div>
+	</form>
+}

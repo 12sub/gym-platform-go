@@ -5,14 +5,28 @@ import (
 	"github.com/12sub/gym-platform/internal/views/layouts"
 )
 
-templ Dashboard(p layouts.Page) {
+type DashboardStats struct {
+	ShowRevenue   bool
+	RevenueToday  string
+	RevenueMonth  string
+	ShowMembers   bool
+	ActiveMembers string
+	ExpiringSoon  string
+}
+
+templ Dashboard(p layouts.Page, s DashboardStats) {
 	@layouts.App(p) {
 		<div class="space-y-6">
 			@pageHeader("Dashboard", "A quick look at how the gym is doing.")
 			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-				@statCard("Revenue today", "—")
-				@statCard("Revenue this month", "—")
-				@statCard("Active members", "—")
+				if s.ShowRevenue {
+					@statCard("Revenue today", s.RevenueToday)
+					@statCard("Revenue this month", s.RevenueMonth)
+				}
+				if s.ShowMembers {
+					@statCard("Active members", s.ActiveMembers)
+					@statCard("Expiring in 7 days", s.ExpiringSoon)
+				}
 				@statCard("Open tickets", "—")
 			</div>
 		</div>

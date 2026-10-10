@@ -165,7 +165,7 @@ templ MembersResults(f MembersFilter, rows []MemberRow, hasNext bool, canManage 
 							@table.Row() {
 								@table.Cell() {
 									<div class="flex items-center gap-2">
-										<span class="font-medium">{ m.Name }</span>
+										<a href={ templ.SafeURL(fmt.Sprintf("/members/%d", m.ID)) } class="font-medium hover:underline">{ m.Name }</a>
 										if !m.IsActive {
 											@pill("muted", "Deactivated")
 										}
@@ -275,6 +275,8 @@ templ memberState(state string) {
 			@pill("amber", "Frozen")
 		case "pending":
 			@pill("amber", "Pending")
+		case "cancelled":
+			@pill("muted", "Cancelled")
 		default:
 			@pill("muted", "No plan")
 	}

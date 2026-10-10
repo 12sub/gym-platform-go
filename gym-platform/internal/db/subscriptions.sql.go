@@ -7,7 +7,33 @@ package db
 
 import (
 	"context"
+	"time"
 )
+
+const activateDueSubscriptions = `-- name: ActivateDueSubscriptions :execrows
+UPDATE subscriptions
+SET status = 'active'
+WHERE status = 'pending' AND starts_on <= $1::date
+`
+
+func (q *Queries) ActivateDueSubscriptions(ctx context.Context, today time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, activateDueSubscriptions, today)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const cancelSubscription = `-- name: CancelSubscription :exec
+UPDATE subscriptions
+SET status = 'cancelled', cancelled_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) CancelSubscription(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, cancelSubscription, id)
+	return err
+}
 
 const countActiveMembers = `-- name: CountActiveMembers :one
 SELECT COUNT(DISTINCT member_id)::bigint
@@ -38,17 +64,245 @@ func (q *Queries) CountExpiringSoon(ctx context.Context) (int64, error) {
 	return column_1, err
 }
 
+const createSubscription = `-- name: CreateSubscription :one
+INSERT INTO subscriptions (member_id, plan_id, starts_on, ends_on, status)
+VALUES ($1, $2, $3,
+        $4, $5)
+RETURNING id
+`
+
+type CreateSubscriptionParams struct {
+	MemberID int64
+	PlanID   int64
+	StartsOn time.Time
+	EndsOn   time.Time
+	Status   string
+}
+
+func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createSubscription,
+		arg.MemberID,
+		arg.PlanID,
+		arg.StartsOn,
+		arg.EndsOn,
+		arg.Status,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const expireOverdueForMember = `-- name: ExpireOverdueForMember :exec
+UPDATE subscriptions
+SET status = 'expired'
+WHERE member_id = $1::bigint
+  AND status = 'active'
+  AND ends_on < $2::date
+`
+
+type ExpireOverdueForMemberParams struct {
+	MemberID int64
+	Today    time.Time
+}
+
+func (q *Queries) ExpireOverdueForMember(ctx context.Context, arg ExpireOverdueForMemberParams) error {
+	_, err := q.db.Exec(ctx, expireOverdueForMember, arg.MemberID, arg.Today)
+	return err
+}
+
 const expireOverdueSubscriptions = `-- name: ExpireOverdueSubscriptions :execrows
 UPDATE subscriptions
 SET status = 'expired'
-WHERE status = 'active'
-  AND ends_on < (now() AT TIME ZONE 'Africa/Lagos')::date
+WHERE status = 'active' AND ends_on < $1::date
 `
 
-func (q *Queries) ExpireOverdueSubscriptions(ctx context.Context) (int64, error) {
-	result, err := q.db.Exec(ctx, expireOverdueSubscriptions)
+func (q *Queries) ExpireOverdueSubscriptions(ctx context.Context, today time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, expireOverdueSubscriptions, today)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const freezeSubscription = `-- name: FreezeSubscription :exec
+UPDATE subscriptions
+SET status = 'frozen', frozen_on = $1::date
+WHERE id = $2
+`
+
+type FreezeSubscriptionParams struct {
+	Today time.Time
+	ID    int64
+}
+
+func (q *Queries) FreezeSubscription(ctx context.Context, arg FreezeSubscriptionParams) error {
+	_, err := q.db.Exec(ctx, freezeSubscription, arg.Today, arg.ID)
+	return err
+}
+
+const getSubscription = `-- name: GetSubscription :one
+SELECT id, member_id, plan_id, starts_on, ends_on, status, cancelled_at, created_at, updated_at, frozen_on FROM subscriptions WHERE id = $1
+`
+
+func (q *Queries) GetSubscription(ctx context.Context, id int64) (Subscription, error) {
+	row := q.db.QueryRow(ctx, getSubscription, id)
+	var i Subscription
+	err := row.Scan(
+		&i.ID,
+		&i.MemberID,
+		&i.PlanID,
+		&i.StartsOn,
+		&i.EndsOn,
+		&i.Status,
+		&i.CancelledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.FrozenOn,
+	)
+	return i, err
+}
+
+const listCurrentSubscriptions = `-- name: ListCurrentSubscriptions :many
+SELECT s.id, s.status, s.starts_on, s.ends_on
+FROM subscriptions s
+WHERE s.member_id = $1::bigint
+  AND s.status IN ('active', 'frozen', 'pending')
+ORDER BY s.starts_on
+`
+
+type ListCurrentSubscriptionsRow struct {
+	ID       int64
+	Status   string
+	StartsOn time.Time
+	EndsOn   time.Time
+}
+
+func (q *Queries) ListCurrentSubscriptions(ctx context.Context, memberID int64) ([]ListCurrentSubscriptionsRow, error) {
+	rows, err := q.db.Query(ctx, listCurrentSubscriptions, memberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCurrentSubscriptionsRow
+	for rows.Next() {
+		var i ListCurrentSubscriptionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.StartsOn,
+			&i.EndsOn,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMemberSubscriptions = `-- name: ListMemberSubscriptions :many
+SELECT s.id,
+       p.name AS plan_name,
+       s.starts_on,
+       s.ends_on,
+       s.frozen_on,
+       (CASE WHEN s.status = 'active' AND s.ends_on < $1::date
+             THEN 'expired' ELSE s.status END)::text AS display_status
+FROM subscriptions s
+JOIN plans p ON p.id = s.plan_id
+WHERE s.member_id = $2::bigint
+ORDER BY s.starts_on DESC, s.id DESC
+`
+
+type ListMemberSubscriptionsParams struct {
+	Today    time.Time
+	MemberID int64
+}
+
+type ListMemberSubscriptionsRow struct {
+	ID            int64
+	PlanName      string
+	StartsOn      time.Time
+	EndsOn        time.Time
+	FrozenOn      *time.Time
+	DisplayStatus string
+}
+
+func (q *Queries) ListMemberSubscriptions(ctx context.Context, arg ListMemberSubscriptionsParams) ([]ListMemberSubscriptionsRow, error) {
+	rows, err := q.db.Query(ctx, listMemberSubscriptions, arg.Today, arg.MemberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMemberSubscriptionsRow
+	for rows.Next() {
+		var i ListMemberSubscriptionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanName,
+			&i.StartsOn,
+			&i.EndsOn,
+			&i.FrozenOn,
+			&i.DisplayStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockMember = `-- name: LockMember :one
+SELECT id, is_active FROM members WHERE id = $1 FOR UPDATE
+`
+
+type LockMemberRow struct {
+	ID       int64
+	IsActive bool
+}
+
+// Taking this lock first serializes every change to one member's subscriptions.
+func (q *Queries) LockMember(ctx context.Context, id int64) (LockMemberRow, error) {
+	row := q.db.QueryRow(ctx, lockMember, id)
+	var i LockMemberRow
+	err := row.Scan(&i.ID, &i.IsActive)
+	return i, err
+}
+
+const shiftPendingSubscriptions = `-- name: ShiftPendingSubscriptions :exec
+UPDATE subscriptions
+SET starts_on = starts_on + $1::int,
+    ends_on   = ends_on   + $1::int
+WHERE member_id = $2::bigint AND status = 'pending'
+`
+
+type ShiftPendingSubscriptionsParams struct {
+	Days     int32
+	MemberID int64
+}
+
+func (q *Queries) ShiftPendingSubscriptions(ctx context.Context, arg ShiftPendingSubscriptionsParams) error {
+	_, err := q.db.Exec(ctx, shiftPendingSubscriptions, arg.Days, arg.MemberID)
+	return err
+}
+
+const unfreezeSubscription = `-- name: UnfreezeSubscription :exec
+UPDATE subscriptions
+SET status = 'active', ends_on = ends_on + $1::int, frozen_on = NULL
+WHERE id = $2
+`
+
+type UnfreezeSubscriptionParams struct {
+	Days int32
+	ID   int64
+}
+
+func (q *Queries) UnfreezeSubscription(ctx context.Context, arg UnfreezeSubscriptionParams) error {
+	_, err := q.db.Exec(ctx, unfreezeSubscription, arg.Days, arg.ID)
+	return err
 }

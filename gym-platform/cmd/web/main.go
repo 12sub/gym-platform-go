@@ -15,6 +15,8 @@ import (
 	"github.com/12sub/gym-platform/internal/handlers"
 	"github.com/12sub/gym-platform/internal/permissions"
 	"github.com/12sub/gym-platform/internal/security"
+	"github.com/12sub/gym-platform/internal/jobs"
+	"github.com/12sub/gym-platform/internal/services"
 )
 
 func main() {
@@ -32,11 +34,13 @@ func main() {
 	}
 
 	q := db.New(pool)
+	subsSvc := services.NewSubscriptions(pool, q)
 	sessions := auth.NewSessionManager(pool, isProd)
 	mw := auth.NewMiddleware(sessions, q)
 
 	authH := handlers.NewAuth(q, sessions)
-	dashH := handlers.NewDashboard()
+	dashH := handlers.NewDashboard(q)
+	membershipsH := handlers.NewMemberships(q, subsSvc)
 	plansH := handlers.NewPlans(q)
 	membersH := handlers.NewMembers(q)
 
@@ -70,6 +74,14 @@ func main() {
 	route("POST /members/{id}", permissions.MembersManage, membersH.Update)
 	route("POST /members/{id}/toggle", permissions.MembersManage, membersH.Toggle)
 
+	// Member detail and subscriptions
+	route("GET /members/{id}", permissions.MembersRead, membershipsH.Show)
+	route("GET /members/{id}/subscribe", permissions.SubscriptionsManage, membershipsH.SubscribeForm)
+	route("POST /members/{id}/subscribe", permissions.SubscriptionsManage, membershipsH.Subscribe)
+	route("POST /subscriptions/{id}/freeze", permissions.SubscriptionsManage, membershipsH.Freeze)
+	route("POST /subscriptions/{id}/unfreeze", permissions.SubscriptionsManage, membershipsH.Unfreeze)
+	route("POST /subscriptions/{id}/cancel", permissions.SubscriptionsManage, membershipsH.Cancel)
+
 	// Built in later steps. The sidebar links already work.
 	route("GET /revenue", permissions.RevenueRead,
 		handlers.ComingSoon("Sales revenue", "revenue", "Daily and monthly revenue, payments and trends."))
@@ -88,6 +100,16 @@ func main() {
 		devHosts = []string{"localhost:7331", "127.0.0.1:7331"}
 	}
 	protected := security.OriginCheck(devHosts, sessions.LoadAndSave(app))
+
+	// Expire finished subscriptions and start queued ones: once at startup, then daily at 00:05 Lagos time.
+	go jobs.RunDaily(ctx, "subscription maintenance", 0, 5, func(ctx context.Context) error {
+		expired, activated, err := subsSvc.RunDailyMaintenance(ctx)
+		if err != nil {
+			return err
+		}
+		log.Printf("subscription maintenance: %d expired, %d activated", expired, activated)
+		return nil
+	})
 
 	// Static files and health check bypass the session layer, so every CSS or
 	// JS request doesn't touch the sessions table.
