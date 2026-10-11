@@ -1,0 +1,184 @@
+package pages
+
+import (
+	"github.com/12sub/gym-platform/components/alert"
+	"github.com/12sub/gym-platform/components/button"
+	"github.com/12sub/gym-platform/components/card"
+	"github.com/12sub/gym-platform/components/input"
+	"github.com/12sub/gym-platform/internal/views/layouts"
+)
+
+type SetPasswordProps struct {
+	Token   string
+	Valid   bool
+	Name    string
+	Purpose string
+	Error   string
+}
+
+type AccountView struct {
+	Name            string
+	Email           string
+	RoleLabel       string
+	RoleDescription string
+}
+
+type PasswordFormData struct {
+	Errors  map[string]string
+	Success bool
+}
+
+templ SetPassword(p SetPasswordProps) {
+	@layouts.Base("Set your password") {
+		<main class="flex min-h-screen items-center justify-center bg-muted/40 px-4 py-12">
+			<div class="w-full max-w-sm">
+				<div class="mb-6 text-center">
+					<h1 class="text-2xl font-semibold tracking-tight">Gym Platform</h1>
+				</div>
+				@card.Card() {
+					if !p.Valid {
+						@card.Header() {
+							@card.Title() {
+								Link not valid
+							}
+							@card.Description() {
+								{ p.Error }
+							}
+						}
+						@card.Content() {
+							@button.Button(button.Props{Href: "/login", Variant: button.VariantOutline, FullWidth: true}) {
+								Go to login
+							}
+						}
+					} else {
+						@card.Header() {
+							@card.Title() {
+								if p.Purpose == "invite" {
+									Welcome, { p.Name }
+								} else {
+									Reset your password
+								}
+							}
+							@card.Description() {
+								Choose a password of at least 12 characters.
+							}
+						}
+						@card.Content() {
+							<form method="POST" action={ templ.SafeURL("/set-password/" + p.Token) } class="space-y-4">
+								if p.Error != "" {
+									@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+										@alert.Description() {
+											{ p.Error }
+										}
+									}
+								}
+								@formField("sp-new", "New password", "") {
+									@input.Input(input.Props{
+										ID:   "sp-new",
+										Name: "password",
+										Type: input.TypePassword,
+										Attributes: templ.Attributes{
+											"required":     true,
+											"minlength":    "12",
+											"autocomplete": "new-password",
+											"autofocus":    true,
+										},
+									})
+								}
+								@formField("sp-confirm", "Confirm password", "") {
+									@input.Input(input.Props{
+										ID:   "sp-confirm",
+										Name: "confirm",
+										Type: input.TypePassword,
+										Attributes: templ.Attributes{
+											"required":     true,
+											"autocomplete": "new-password",
+										},
+									})
+								}
+								@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
+									Save password
+								}
+							</form>
+						}
+					}
+				}
+			</div>
+		</main>
+	}
+}
+
+templ AccountPage(p layouts.Page, a AccountView, f PasswordFormData) {
+	@layouts.App(p) {
+		<div class="max-w-xl space-y-6">
+			@pageHeader("My account", "Your details and password.")
+			@card.Card() {
+				@card.Content() {
+					<dl class="grid gap-4 pt-6 text-sm sm:grid-cols-2">
+						@detail("Name", a.Name)
+						@detail("Email", a.Email)
+						@detail("Role", a.RoleLabel)
+					</dl>
+					<p class="mt-4 text-xs text-muted-foreground">{ a.RoleDescription }</p>
+				}
+			}
+			@AccountPasswordForm(f)
+		</div>
+	}
+}
+
+templ AccountPasswordForm(f PasswordFormData) {
+	<div id="account-password">
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Change password
+				}
+				@card.Description() {
+					You'll stay signed in here. Any other device will be signed out.
+				}
+			}
+			@card.Content() {
+				<form hx-post="/account/password" hx-target="#account-password" hx-swap="outerHTML" class="space-y-4">
+					if f.Success {
+						@alert.Alert() {
+							@alert.Description() {
+								Password changed.
+							}
+						}
+					}
+					@formField("acc-current", "Current password", f.Errors["current"]) {
+						@input.Input(input.Props{
+							ID:         "acc-current",
+							Name:       "current",
+							Type:       input.TypePassword,
+							HasError:   f.Errors["current"] != "",
+							Attributes: templ.Attributes{"required": true, "autocomplete": "current-password"},
+						})
+					}
+					@formField("acc-new", "New password", f.Errors["new"]) {
+						@input.Input(input.Props{
+							ID:         "acc-new",
+							Name:       "new",
+							Type:       input.TypePassword,
+							HasError:   f.Errors["new"] != "",
+							Attributes: templ.Attributes{"required": true, "minlength": "12", "autocomplete": "new-password"},
+						})
+					}
+					@formField("acc-confirm", "Confirm new password", f.Errors["confirm"]) {
+						@input.Input(input.Props{
+							ID:         "acc-confirm",
+							Name:       "confirm",
+							Type:       input.TypePassword,
+							HasError:   f.Errors["confirm"] != "",
+							Attributes: templ.Attributes{"required": true, "autocomplete": "new-password"},
+						})
+					}
+					@button.Button(button.Props{Type: button.TypeSubmit}) {
+						Change password
+					}
+				</form>
+			}
+		}
+	</div>
+}

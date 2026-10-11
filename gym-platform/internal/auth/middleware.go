@@ -44,7 +44,7 @@ func (m *Middleware) RequireAuth(next http.Handler) http.Handler {
 		}
 
 		row, err := m.q.GetUserByID(r.Context(), id)
-		if err != nil || !row.IsActive {
+		if err != nil || !row.IsActive || int(row.TokenVersion) != m.sessions.GetInt(r.Context(), SessionVersionKey) {
 			_ = m.sessions.Destroy(r.Context())
 			redirectToLogin(w, r)
 			return

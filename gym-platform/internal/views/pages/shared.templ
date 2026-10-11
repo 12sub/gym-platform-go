@@ -54,3 +54,14 @@ func openDialogAttrs(url, bodyID, dialogID string) templ.Attributes {
 		"hx-on::after-request": "if (event.detail.successful) window.tui.dialog.open('" + dialogID + "')",
 	}
 }
+
+// openDialogPostAttrs is like openDialogAttrs but for actions that change
+// something on the server and show the result in the dialog.
+func openDialogPostAttrs(url, bodyID, dialogID string) templ.Attributes {
+	return templ.Attributes{
+		"hx-post":              url,
+		"hx-target":            "#" + bodyID,
+		"hx-swap":              "innerHTML",
+		"hx-on::after-request": "if (event.detail.successful) window.tui.dialog.open('" + dialogID + "')",
+	}
+}

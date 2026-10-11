@@ -1,0 +1,241 @@
+package pages
+
+import (
+	"fmt"
+
+	"github.com/12sub/gym-platform/components/button"
+	"github.com/12sub/gym-platform/components/card"
+	"github.com/12sub/gym-platform/components/input"
+	"github.com/12sub/gym-platform/components/table"
+	"github.com/12sub/gym-platform/internal/views/layouts"
+)
+
+type Preset struct {
+	Label string
+	URL   string
+}
+
+type RevenueKPI struct {
+	Total   string
+	Count   string
+	Average string
+}
+
+// RevenueChartData is sent to the browser as JSON for Chart.js.
+type RevenueChartData struct {
+	TimeTitle    string    `json:"timeTitle"`
+	TimeLabels   []string  `json:"timeLabels"`
+	TimeValues   []float64 `json:"timeValues"`
+	PlanLabels   []string  `json:"planLabels"`
+	PlanValues   []float64 `json:"planValues"`
+	MethodLabels []string  `json:"methodLabels"`
+	MethodValues []float64 `json:"methodValues"`
+}
+
+type RevenuePaymentRow struct {
+	Date       string
+	MemberID   int64
+	MemberName string
+	MemberCode string
+	Plan       string
+	Method     string
+	Amount     string
+	RecordedBy string
+}
+
+type RevenueView struct {
+	From      string
+	To        string
+	Group     string
+	Presets   []Preset
+	ExportURL string
+	KPI       RevenueKPI
+	HasData   bool
+	Chart     RevenueChartData
+	Payments  []RevenuePaymentRow
+	Truncated bool
+}
+
+templ RevenuePage(p layouts.Page, d RevenueView) {
+	@layouts.App(p) {
+		<div class="space-y-6">
+			@pageHeader("Sales revenue", "Money received from memberships, by day or month.")
+			@RevenueResults(d)
+		</div>
+		<script src="/assets/js/chart.umd.js"></script>
+		<script src="/assets/js/revenue.js"></script>
+	}
+}
+
+// RevenueResults holds the filters and everything that depends on them, so one
+// swap keeps the date boxes, charts and table in step.
+templ RevenueResults(d RevenueView) {
+	<div id="revenue-results" class="space-y-6">
+		<div class="space-y-3">
+			<form
+				action="/revenue"
+				method="get"
+				hx-get="/revenue"
+				hx-target="#revenue-results"
+				hx-swap="outerHTML"
+				hx-push-url="true"
+				hx-trigger="change"
+				class="flex flex-wrap items-end gap-3"
+			>
+				<div class="w-40">
+					@formField("rev-from", "From", "") {
+						@input.Input(input.Props{ID: "rev-from", Name: "from", Type: input.TypeDate, Value: d.From})
+					}
+				</div>
+				<div class="w-40">
+					@formField("rev-to", "To", "") {
+						@input.Input(input.Props{ID: "rev-to", Name: "to", Type: input.TypeDate, Value: d.To})
+					}
+				</div>
+				<div class="w-36">
+					@formField("rev-group", "Group by", "") {
+						<select id="rev-group" name="group" class={ fieldClass }>
+							<option value="day" selected?={ d.Group == "day" }>Day</option>
+							<option value="month" selected?={ d.Group == "month" }>Month</option>
+						</select>
+					}
+				</div>
+				@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantOutline}) {
+					Apply
+				}
+				<div class="ml-auto">
+					@button.Button(button.Props{Href: d.ExportURL, Variant: button.VariantOutline}) {
+						Export CSV
+					}
+				</div>
+			</form>
+			<div class="flex flex-wrap gap-2">
+				for _, pr := range d.Presets {
+					@button.Button(button.Props{
+						Variant: button.VariantGhost,
+						Size:    button.SizeSm,
+						Attributes: templ.Attributes{
+							"hx-get":      pr.URL,
+							"hx-target":   "#revenue-results",
+							"hx-swap":     "outerHTML",
+							"hx-push-url": "true",
+						},
+					}) {
+						{ pr.Label }
+					}
+				}
+			</div>
+		</div>
+		<div class="grid gap-4 sm:grid-cols-3">
+			@statCard("Total revenue", d.KPI.Total)
+			@statCard("Payments", d.KPI.Count)
+			@statCard("Average payment", d.KPI.Average)
+		</div>
+		if !d.HasData {
+			<div class="rounded-lg border border-dashed p-12 text-center text-sm text-muted-foreground">
+				No payments in this period.
+			</div>
+		} else {
+			@templ.JSONScript("revenue-data", d.Chart)
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						{ d.Chart.TimeTitle }
+					}
+				}
+				@card.Content() {
+					<div class="relative h-72">
+						<canvas id="chart-time"></canvas>
+					</div>
+				}
+			}
+			<div class="grid gap-4 lg:grid-cols-2">
+				@card.Card() {
+					@card.Header() {
+						@card.Title() {
+							By plan
+						}
+					}
+					@card.Content() {
+						<div class="relative h-64">
+							<canvas id="chart-plan"></canvas>
+						</div>
+					}
+				}
+				@card.Card() {
+					@card.Header() {
+						@card.Title() {
+							By payment method
+						}
+					}
+					@card.Content() {
+						<div class="relative h-64">
+							<canvas id="chart-method"></canvas>
+						</div>
+					}
+				}
+			</div>
+			<div class="space-y-2">
+				<h2 class="text-lg font-semibold">Payments</h2>
+				if d.Truncated {
+					<p class="text-sm text-muted-foreground">Showing the latest 50. Export the CSV to get all of them.</p>
+				}
+				<div class="rounded-lg border">
+					@table.Table() {
+						@table.Header() {
+							@table.Row() {
+								@table.Head() {
+									Date
+								}
+								@table.Head() {
+									Member
+								}
+								@table.Head() {
+									Plan
+								}
+								@table.Head() {
+									Method
+								}
+								@table.Head() {
+									Amount
+								}
+								@table.Head() {
+									Recorded by
+								}
+							}
+						}
+						@table.Body() {
+							for _, p := range d.Payments {
+								@table.Row() {
+									@table.Cell() {
+										{ p.Date }
+									}
+									@table.Cell() {
+										<a href={ templ.SafeURL(fmt.Sprintf("/members/%d", p.MemberID)) } class="font-medium hover:underline">{ p.MemberName }</a>
+										<div class="text-xs text-muted-foreground">{ p.MemberCode }</div>
+									}
+									@table.Cell() {
+										if p.Plan == "" {
+											<span class="text-muted-foreground">—</span>
+										} else {
+											{ p.Plan }
+										}
+									}
+									@table.Cell() {
+										{ p.Method }
+									}
+									@table.Cell() {
+										<span class="font-medium">{ p.Amount }</span>
+									}
+									@table.Cell() {
+										{ p.RecordedBy }
+									}
+								}
+							}
+						}
+					}
+				</div>
+			</div>
+		}
+	</div>
+}

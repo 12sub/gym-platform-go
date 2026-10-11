@@ -83,3 +83,8 @@ func withCommas(n int64) string {
 	}
 	return b.String()
 }
+
+// FormatDecimal renders kobo for a spreadsheet: 1500000 -> "15000.00".
+func FormatDecimal(kobo int64) string {
+	return fmt.Sprintf("%d.%02d", kobo/100, kobo%100)
+}

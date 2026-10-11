@@ -34,6 +34,17 @@ type Member struct {
 	UpdatedAt             time.Time
 }
 
+type PasswordToken struct {
+	ID        int64
+	UserID    int64
+	TokenHash string
+	Purpose   string
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+	CreatedBy *int64
+	CreatedAt time.Time
+}
+
 type Payment struct {
 	ID             int64
 	MemberID       int64
@@ -165,4 +176,5 @@ type User struct {
 	IsActive     bool
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	TokenVersion int32
 }

@@ -54,6 +54,82 @@ func (q *Queries) DailyRevenue(ctx context.Context, arg DailyRevenueParams) ([]D
 	return items, nil
 }
 
+const listPaymentsInRange = `-- name: ListPaymentsInRange :many
+SELECT pay.id,
+       pay.amount,
+       pay.method,
+       pay.paid_at,
+       pay.reference,
+       pay.note,
+       m.id          AS member_id,
+       m.full_name   AS member_name,
+       m.member_code AS member_code,
+       COALESCE(p.name, '')::text      AS plan_name,
+       COALESCE(u.full_name, '')::text AS recorded_by_name
+FROM payments pay
+JOIN members m ON m.id = pay.member_id
+LEFT JOIN subscriptions s ON s.id = pay.subscription_id
+LEFT JOIN plans p ON p.id = s.plan_id
+LEFT JOIN users u ON u.id = pay.recorded_by
+WHERE pay.status = 'successful'
+  AND pay.paid_at >= $1::timestamptz
+  AND pay.paid_at <  $2::timestamptz
+ORDER BY pay.paid_at DESC, pay.id DESC
+LIMIT $3::int
+`
+
+type ListPaymentsInRangeParams struct {
+	StartAt  time.Time
+	EndAt    time.Time
+	RowLimit int32
+}
+
+type ListPaymentsInRangeRow struct {
+	ID             int64
+	Amount         int64
+	Method         string
+	PaidAt         *time.Time
+	Reference      string
+	Note           *string
+	MemberID       int64
+	MemberName     string
+	MemberCode     string
+	PlanName       string
+	RecordedByName string
+}
+
+func (q *Queries) ListPaymentsInRange(ctx context.Context, arg ListPaymentsInRangeParams) ([]ListPaymentsInRangeRow, error) {
+	rows, err := q.db.Query(ctx, listPaymentsInRange, arg.StartAt, arg.EndAt, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPaymentsInRangeRow
+	for rows.Next() {
+		var i ListPaymentsInRangeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Amount,
+			&i.Method,
+			&i.PaidAt,
+			&i.Reference,
+			&i.Note,
+			&i.MemberID,
+			&i.MemberName,
+			&i.MemberCode,
+			&i.PlanName,
+			&i.RecordedByName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const monthlyRevenue = `-- name: MonthlyRevenue :many
 SELECT
   date_trunc('month', paid_at AT TIME ZONE 'Africa/Lagos')::date AS month,
@@ -98,15 +174,56 @@ func (q *Queries) MonthlyRevenue(ctx context.Context, arg MonthlyRevenueParams) 
 	return items, nil
 }
 
+const revenueByMethod = `-- name: RevenueByMethod :many
+SELECT method, SUM(amount)::bigint AS total
+FROM payments
+WHERE status = 'successful'
+  AND paid_at >= $1::timestamptz
+  AND paid_at <  $2::timestamptz
+GROUP BY method
+ORDER BY total DESC
+`
+
+type RevenueByMethodParams struct {
+	StartAt time.Time
+	EndAt   time.Time
+}
+
+type RevenueByMethodRow struct {
+	Method string
+	Total  int64
+}
+
+func (q *Queries) RevenueByMethod(ctx context.Context, arg RevenueByMethodParams) ([]RevenueByMethodRow, error) {
+	rows, err := q.db.Query(ctx, revenueByMethod, arg.StartAt, arg.EndAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RevenueByMethodRow
+	for rows.Next() {
+		var i RevenueByMethodRow
+		if err := rows.Scan(&i.Method, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const revenueByPlan = `-- name: RevenueByPlan :many
-SELECT p.name AS plan_name, SUM(pay.amount)::bigint AS total
+SELECT COALESCE(p.name, 'Other')::text AS plan_name,
+       SUM(pay.amount)::bigint         AS total
 FROM payments pay
-JOIN subscriptions s ON s.id = pay.subscription_id
-JOIN plans p ON p.id = s.plan_id
+LEFT JOIN subscriptions s ON s.id = pay.subscription_id
+LEFT JOIN plans p ON p.id = s.plan_id
 WHERE pay.status = 'successful'
   AND pay.paid_at >= $1::timestamptz
   AND pay.paid_at <  $2::timestamptz
-GROUP BY p.name
+GROUP BY 1
 ORDER BY total DESC
 `
 
@@ -138,4 +255,30 @@ func (q *Queries) RevenueByPlan(ctx context.Context, arg RevenueByPlanParams) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const revenueSummary = `-- name: RevenueSummary :one
+SELECT COALESCE(SUM(amount), 0)::bigint AS total,
+       COUNT(*)::bigint                 AS payment_count
+FROM payments
+WHERE status = 'successful'
+  AND paid_at >= $1::timestamptz
+  AND paid_at <  $2::timestamptz
+`
+
+type RevenueSummaryParams struct {
+	StartAt time.Time
+	EndAt   time.Time
+}
+
+type RevenueSummaryRow struct {
+	Total        int64
+	PaymentCount int64
+}
+
+func (q *Queries) RevenueSummary(ctx context.Context, arg RevenueSummaryParams) (RevenueSummaryRow, error) {
+	row := q.db.QueryRow(ctx, revenueSummary, arg.StartAt, arg.EndAt)
+	var i RevenueSummaryRow
+	err := row.Scan(&i.Total, &i.PaymentCount)
+	return i, err
 }

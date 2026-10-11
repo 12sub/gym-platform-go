@@ -10,6 +10,7 @@ import (
 )
 
 const SessionUserKey = "user_id"
+const SessionVersionKey = "token_version"
 
 func NewSessionManager(pool *pgxpool.Pool, secureCookies bool) *scs.SessionManager {
 	sm := scs.New()

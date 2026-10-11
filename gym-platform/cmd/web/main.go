@@ -13,9 +13,9 @@ import (
 	"github.com/12sub/gym-platform/internal/auth"
 	"github.com/12sub/gym-platform/internal/db"
 	"github.com/12sub/gym-platform/internal/handlers"
+	"github.com/12sub/gym-platform/internal/jobs"
 	"github.com/12sub/gym-platform/internal/permissions"
 	"github.com/12sub/gym-platform/internal/security"
-	"github.com/12sub/gym-platform/internal/jobs"
 	"github.com/12sub/gym-platform/internal/services"
 )
 
@@ -43,6 +43,7 @@ func main() {
 	membershipsH := handlers.NewMemberships(q, subsSvc)
 	plansH := handlers.NewPlans(q)
 	membersH := handlers.NewMembers(q)
+	revenueH := handlers.NewRevenue(q)
 
 	// App routes: these get sessions, origin checks and auth.
 	app := http.NewServeMux()
@@ -52,6 +53,15 @@ func main() {
 	app.HandleFunc("GET /login", authH.LoginPage)
 	app.HandleFunc("POST /login", authH.LoginSubmit)
 	app.Handle("POST /logout", mw.RequireAuth(http.HandlerFunc(authH.Logout)))
+	staffSvc := services.NewStaff(pool, q)
+	staffH := handlers.NewStaff(q, staffSvc)
+	accountsH := handlers.NewAccounts(staffSvc, sessions)
+
+	// One-time links (public) and the signed-in user's own account.
+	app.HandleFunc("GET /set-password/{token}", accountsH.SetPasswordPage)
+	app.HandleFunc("POST /set-password/{token}", accountsH.SetPasswordSubmit)
+	app.Handle("GET /account", mw.RequireAuth(http.HandlerFunc(accountsH.AccountPage)))
+	app.Handle("POST /account/password", mw.RequireAuth(http.HandlerFunc(accountsH.ChangePassword)))
 
 	// route registers a path that needs a permission.
 	route := func(pattern string, p permissions.Permission, h http.HandlerFunc) {
@@ -82,17 +92,26 @@ func main() {
 	route("POST /subscriptions/{id}/unfreeze", permissions.SubscriptionsManage, membershipsH.Unfreeze)
 	route("POST /subscriptions/{id}/cancel", permissions.SubscriptionsManage, membershipsH.Cancel)
 
+	// Revenue routes
+	route("GET /revenue", permissions.RevenueRead, revenueH.Index)
+	route("GET /revenue/export.csv", permissions.RevenueRead, revenueH.Export)
+
 	// Built in later steps. The sidebar links already work.
-	route("GET /revenue", permissions.RevenueRead,
-		handlers.ComingSoon("Sales revenue", "revenue", "Daily and monthly revenue, payments and trends."))
 	route("GET /tickets", permissions.TicketsRead,
 		handlers.ComingSoon("Tickets", "tickets", "Complaints and facility issues, from report to resolution."))
 	route("GET /blog", permissions.PostsRead,
 		handlers.ComingSoon("Blog posts", "blog", "Write posts and publish them to your social media."))
-	route("GET /staff", permissions.StaffRead,
-		handlers.ComingSoon("Staff & roles", "staff", "Staff accounts and what each role is authorised to do."))
 	route("GET /company", permissions.CompanyRead,
 		handlers.ComingSoon("Company details", "company", "Your gym's name, contacts and business details."))
+	// Staff and roles
+	route("GET /staff", permissions.StaffRead, staffH.Index)
+	route("GET /staff/roles", permissions.StaffRead, staffH.Roles)
+	route("GET /staff/new", permissions.StaffManage, staffH.NewForm)
+	route("POST /staff", permissions.StaffManage, staffH.Create)
+	route("GET /staff/{id}/edit", permissions.StaffManage, staffH.EditForm)
+	route("POST /staff/{id}", permissions.StaffManage, staffH.Update)
+	route("POST /staff/{id}/toggle", permissions.StaffManage, staffH.Toggle)
+	route("POST /staff/{id}/reset", permissions.StaffManage, staffH.ResetLink)
 
 	// In development, templ's proxy serves pages from :7331 while the app is on :3333.
 	var devHosts []string

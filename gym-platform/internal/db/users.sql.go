@@ -53,7 +53,8 @@ func (q *Queries) GetRoleBySlug(ctx context.Context, slug string) (Role, error) 
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT u.id, u.full_name, u.email, u.password_hash, u.is_active, r.slug AS role_slug
+SELECT u.id, u.full_name, u.email, u.password_hash, u.is_active, u.token_version,
+       r.slug AS role_slug
 FROM users u
 JOIN roles r ON r.id = u.role_id
 WHERE lower(u.email) = lower($1)
@@ -65,6 +66,7 @@ type GetUserByEmailRow struct {
 	Email        string
 	PasswordHash string
 	IsActive     bool
+	TokenVersion int32
 	RoleSlug     string
 }
 
@@ -77,24 +79,27 @@ func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (GetUserByEm
 		&i.Email,
 		&i.PasswordHash,
 		&i.IsActive,
+		&i.TokenVersion,
 		&i.RoleSlug,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT u.id, u.full_name, u.email, u.is_active, r.slug AS role_slug
+SELECT u.id, u.full_name, u.email, u.is_active, u.token_version,
+       r.slug AS role_slug
 FROM users u
 JOIN roles r ON r.id = u.role_id
 WHERE u.id = $1
 `
 
 type GetUserByIDRow struct {
-	ID       int64
-	FullName string
-	Email    string
-	IsActive bool
-	RoleSlug string
+	ID           int64
+	FullName     string
+	Email        string
+	IsActive     bool
+	TokenVersion int32
+	RoleSlug     string
 }
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (GetUserByIDRow, error) {
@@ -105,6 +110,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (GetUserByIDRow, er
 		&i.FullName,
 		&i.Email,
 		&i.IsActive,
+		&i.TokenVersion,
 		&i.RoleSlug,
 	)
 	return i, err
@@ -114,10 +120,11 @@ const upsertUserByEmail = `-- name: UpsertUserByEmail :one
 INSERT INTO users (full_name, email, password_hash, role_id)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (lower(email)) DO UPDATE
-  SET full_name = EXCLUDED.full_name,
+  SET full_name     = EXCLUDED.full_name,
       password_hash = EXCLUDED.password_hash,
-      role_id = EXCLUDED.role_id,
-      is_active = true
+      role_id       = EXCLUDED.role_id,
+      is_active     = true,
+      token_version = users.token_version + 1
 RETURNING id
 `
 

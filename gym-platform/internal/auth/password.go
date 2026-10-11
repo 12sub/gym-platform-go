@@ -1,6 +1,11 @@
 package auth
 
-import "github.com/alexedwards/argon2id"
+import (
+	"github.com/alexedwards/argon2id"
+	"errors"
+	"strings"
+	"unicode/utf8"
+)
 
 func HashPassword(password string) (string, error) {
 	return argon2id.CreateHash(password, argon2id.DefaultParams)
@@ -16,4 +21,15 @@ var dummyHash, _ = argon2id.CreateHash("not-a-real-password", argon2id.DefaultPa
 
 func BurnTime(password string) {
 	_, _ = argon2id.ComparePasswordAndHash(password, dummyHash)
+}
+
+var ErrWeakPassword = errors.New("Use at least 12 characters, and not your email address.")
+
+// ValidateNewPassword is the one place the password rule lives.
+func ValidateNewPassword(password, email string) error {
+	n := utf8.RuneCountInString(password)
+	if n < 12 || n > 200 || strings.EqualFold(password, email) {
+		return ErrWeakPassword
+	}
+	return nil
 }

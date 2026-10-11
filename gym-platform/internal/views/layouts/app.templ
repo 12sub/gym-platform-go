@@ -57,7 +57,7 @@ templ App(p Page) {
 					@sidebar.Trigger()
 					<span class="text-sm font-medium">{ p.Title }</span>
 					<div class="ml-auto text-right text-sm leading-tight">
-						<p class="font-medium">{ p.FullName }</p>
+					<p class="font-medium"><a href="/account" class="hover:underline">{ p.FullName }</a></p>
 						<p class="text-xs text-muted-foreground">{ p.RoleLabel }</p>
 					</div>
 				</header>

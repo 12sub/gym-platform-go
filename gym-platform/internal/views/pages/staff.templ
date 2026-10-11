@@ -1,0 +1,430 @@
+package pages
+
+import (
+	"fmt"
+
+	"github.com/12sub/gym-platform/components/alert"
+	"github.com/12sub/gym-platform/components/button"
+	"github.com/12sub/gym-platform/components/dialog"
+	"github.com/12sub/gym-platform/components/input"
+	"github.com/12sub/gym-platform/components/table"
+	"github.com/12sub/gym-platform/internal/permissions"
+	"github.com/12sub/gym-platform/internal/views/layouts"
+)
+
+type StaffRow struct {
+	ID        int64
+	Name      string
+	Email     string
+	RoleSlug  string
+	RoleLabel string
+	Phone     string
+	Position  string
+	IsActive  bool
+	Pending   bool // invited, hasn't chosen a password yet
+	IsSelf    bool
+}
+
+type StaffTableView struct {
+	Rows      []StaffRow
+	CanManage bool
+	Error     string
+	OOB       bool // render as an out-of-band swap alongside another response
+}
+
+type StaffFormData struct {
+	ID       int64 // 0 means a new invite
+	FullName string
+	Email    string
+	Role     string
+	Phone    string
+	Position string
+	Roles    []permissions.RoleInfo
+	Errors   map[string]string
+}
+
+func (f StaffFormData) Title() string {
+	if f.ID == 0 {
+		return "Invite staff"
+	}
+	return "Edit staff"
+}
+
+func (f StaffFormData) Action() string {
+	if f.ID == 0 {
+		return "/staff"
+	}
+	return fmt.Sprintf("/staff/%d", f.ID)
+}
+
+type StaffLinkView struct {
+	Title string
+	Intro string
+	URL   string
+	Hours int
+	Error string
+}
+
+type RoleCol struct {
+	Label       string
+	Description string
+}
+
+type MatrixRow struct {
+	Label   string
+	Allowed []bool
+}
+
+type MatrixGroup struct {
+	Name string
+	Rows []MatrixRow
+}
+
+type RoleMatrix struct {
+	Roles  []RoleCol
+	Groups []MatrixGroup
+}
+
+func oobAttrs(oob bool) templ.Attributes {
+	if oob {
+		return templ.Attributes{"hx-swap-oob": "true"}
+	}
+	return nil
+}
+
+func toggleAttrs(s StaffRow) templ.Attributes {
+	a := templ.Attributes{
+		"hx-post":   fmt.Sprintf("/staff/%d/toggle", s.ID),
+		"hx-target": "#staff-table",
+		"hx-swap":   "outerHTML",
+	}
+	if s.IsActive {
+		a["hx-confirm"] = "Deactivate " + s.Name + "? They will be signed out and won't be able to log in."
+	}
+	return a
+}
+
+templ StaffPage(p layouts.Page, v StaffTableView) {
+	@layouts.App(p) {
+		<div class="space-y-6">
+			@pageHeader("Staff & roles", "Who can sign in, and what each person is allowed to do.") {
+				<div class="flex gap-2">
+					@button.Button(button.Props{Href: "/staff/roles", Variant: button.VariantOutline}) {
+						What each role can do
+					}
+					if v.CanManage {
+						@button.Button(button.Props{
+							Attributes: openDialogAttrs("/staff/new", "staff-dialog-body", "staff-dialog"),
+						}) {
+							Invite staff
+						}
+					}
+				</div>
+			}
+			@StaffTable(v)
+		</div>
+		@dialog.Dialog(dialog.Props{ID: "staff-dialog"}) {
+			@dialog.Content() {
+				<div id="staff-dialog-body"></div>
+			}
+		}
+	}
+}
+
+templ StaffTable(v StaffTableView) {
+	<div id="staff-table" { oobAttrs(v.OOB)... } class="space-y-3">
+		if v.Error != "" {
+			@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+				@alert.Description() {
+					{ v.Error }
+				}
+			}
+		}
+		<div class="rounded-lg border">
+			@table.Table() {
+				@table.Header() {
+					@table.Row() {
+						@table.Head() {
+							Name
+						}
+						@table.Head() {
+							Role
+						}
+						@table.Head() {
+							Contact
+						}
+						@table.Head() {
+							Status
+						}
+						if v.CanManage {
+							@table.Head() {
+								Actions
+							}
+						}
+					}
+				}
+				@table.Body() {
+					for _, s := range v.Rows {
+						@table.Row() {
+							@table.Cell() {
+								<div class="font-medium">
+									{ s.Name }
+									if s.IsSelf {
+										<span class="text-xs font-normal text-muted-foreground">(you)</span>
+									}
+								</div>
+								<div class="text-xs text-muted-foreground">{ s.Email }</div>
+							}
+							@table.Cell() {
+								{ s.RoleLabel }
+								if s.Position != "" {
+									<div class="text-xs text-muted-foreground">{ s.Position }</div>
+								}
+							}
+							@table.Cell() {
+								if s.Phone == "" {
+									<span class="text-muted-foreground">—</span>
+								} else {
+									{ s.Phone }
+								}
+							}
+							@table.Cell() {
+								if !s.IsActive {
+									@pill("muted", "Deactivated")
+								} else if s.Pending {
+									@pill("amber", "Invite pending")
+								} else {
+									@pill("green", "Active")
+								}
+							}
+							if v.CanManage {
+								@table.Cell() {
+									<div class="flex flex-wrap gap-2">
+										@button.Button(button.Props{
+											Variant:    button.VariantOutline,
+											Size:       button.SizeSm,
+											Attributes: openDialogAttrs(fmt.Sprintf("/staff/%d/edit", s.ID), "staff-dialog-body", "staff-dialog"),
+										}) {
+											Edit
+										}
+										if !s.IsSelf && s.IsActive {
+											@button.Button(button.Props{
+												Variant:    button.VariantOutline,
+												Size:       button.SizeSm,
+												Attributes: openDialogPostAttrs(fmt.Sprintf("/staff/%d/reset", s.ID), "staff-dialog-body", "staff-dialog"),
+											}) {
+												if s.Pending {
+													New setup link
+												} else {
+													Reset password
+												}
+											}
+										}
+										if !s.IsSelf {
+											@button.Button(button.Props{
+												Variant:    button.VariantGhost,
+												Size:       button.SizeSm,
+												Attributes: toggleAttrs(s),
+											}) {
+												if s.IsActive {
+													Deactivate
+												} else {
+													Activate
+												}
+											}
+										}
+									</div>
+								}
+							}
+						}
+					}
+				}
+			}
+		</div>
+	</div>
+}
+
+templ StaffForm(f StaffFormData) {
+	<form
+		id="staff-form"
+		hx-post={ f.Action() }
+		hx-target="#staff-dialog-body"
+		hx-swap="innerHTML"
+		class="space-y-4"
+	>
+		<div>
+			<h2 class="text-lg font-semibold">{ f.Title() }</h2>
+			if f.ID == 0 {
+				<p class="text-sm text-muted-foreground">You'll get a one-time link to send them, so they choose their own password.</p>
+			}
+		</div>
+		if f.Errors["_"] != "" {
+			@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+				@alert.Description() {
+					{ f.Errors["_"] }
+				}
+			}
+		}
+		@formField("staff-name", "Full name", f.Errors["full_name"]) {
+			@input.Input(input.Props{
+				ID:         "staff-name",
+				Name:       "full_name",
+				Value:      f.FullName,
+				HasError:   f.Errors["full_name"] != "",
+				Attributes: templ.Attributes{"required": true, "maxlength": "100"},
+			})
+		}
+		@formField("staff-email", "Email", f.Errors["email"]) {
+			@input.Input(input.Props{
+				ID:         "staff-email",
+				Name:       "email",
+				Type:       input.TypeEmail,
+				Value:      f.Email,
+				Readonly:   f.ID != 0,
+				HasError:   f.Errors["email"] != "",
+				Attributes: templ.Attributes{"required": true},
+			})
+		}
+		@formField("staff-role", "Role", f.Errors["role"]) {
+			<select id="staff-role" name="role" class={ fieldClass }>
+				for _, r := range f.Roles {
+					<option value={ r.Slug } selected?={ r.Slug == f.Role }>{ r.Label }</option>
+				}
+			</select>
+		}
+		<div class="grid gap-4 sm:grid-cols-2">
+			@formField("staff-phone", "Phone (optional)", f.Errors["phone"]) {
+				@input.Input(input.Props{
+					ID:         "staff-phone",
+					Name:       "phone",
+					Value:      f.Phone,
+					HasError:   f.Errors["phone"] != "",
+					Attributes: templ.Attributes{"inputmode": "tel"},
+				})
+			}
+			@formField("staff-position", "Job title (optional)", f.Errors["position"]) {
+				@input.Input(input.Props{
+					ID:         "staff-position",
+					Name:       "position",
+					Value:      f.Position,
+					HasError:   f.Errors["position"] != "",
+					Attributes: templ.Attributes{"maxlength": "60"},
+				})
+			}
+		</div>
+		<div class="flex justify-end pt-2">
+			@button.Button(button.Props{Type: button.TypeSubmit}) {
+				if f.ID == 0 {
+					Create and get link
+				} else {
+					Save changes
+				}
+			}
+		</div>
+	</form>
+}
+
+templ StaffLink(l StaffLinkView) {
+	<div class="space-y-4">
+		<h2 class="text-lg font-semibold">{ l.Title }</h2>
+		if l.Error != "" {
+			@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+				@alert.Description() {
+					{ l.Error }
+				}
+			}
+		} else {
+			<p class="text-sm text-muted-foreground">{ l.Intro }</p>
+			<div class="flex items-center gap-2">
+				<div class="flex-1">
+					@input.Input(input.Props{
+						ID:         "staff-link",
+						Value:      l.URL,
+						Readonly:   true,
+						Attributes: templ.Attributes{"onclick": "this.select()"},
+					})
+				</div>
+				@button.Button(button.Props{
+					Attributes: templ.Attributes{
+						"type":    "button",
+						"onclick": "navigator.clipboard.writeText(document.getElementById('staff-link').value); this.textContent = 'Copied'",
+					},
+				}) {
+					Copy
+				}
+			</div>
+			<p class="text-xs text-muted-foreground">
+				This link works once and expires in { fmt.Sprint(l.Hours) } hours. It won't be shown again, so copy it now.
+			</p>
+		}
+	</div>
+}
+
+// StaffCreated answers the invite form: the link goes in the dialog, and the
+// staff table behind it refreshes in the same response.
+templ StaffCreated(l StaffLinkView, v StaffTableView) {
+	@StaffLink(l)
+	@StaffTable(v)
+}
+
+templ RolesPage(p layouts.Page, m RoleMatrix) {
+	@layouts.App(p) {
+		<div class="space-y-6">
+			<a href="/staff" class="text-sm text-muted-foreground hover:underline">← Staff & roles</a>
+			@pageHeader("What each role can do", "This table is generated from the same rules the server enforces.")
+			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+				for _, r := range m.Roles {
+					<div class="rounded-lg border p-3">
+						<div class="font-medium">{ r.Label }</div>
+						<p class="mt-1 text-xs text-muted-foreground">{ r.Description }</p>
+					</div>
+				}
+			</div>
+			<div class="rounded-lg border">
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head() {
+								Permission
+							}
+							for _, r := range m.Roles {
+								@table.Head() {
+									{ r.Label }
+								}
+							}
+						}
+					}
+					@table.Body() {
+						for _, g := range m.Groups {
+							@table.Row() {
+								@table.Cell() {
+									<span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{ g.Name }</span>
+								}
+								for range m.Roles {
+									@table.Cell() {
+									}
+								}
+							}
+							for _, row := range g.Rows {
+								@table.Row() {
+									@table.Cell() {
+										{ row.Label }
+									}
+									for _, ok := range row.Allowed {
+										@table.Cell() {
+											if ok {
+												<span class="font-semibold text-emerald-600" aria-label="allowed">✓</span>
+											} else {
+												<span class="text-muted-foreground" aria-label="not allowed">—</span>
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			</div>
+		</div>
+	}
+}

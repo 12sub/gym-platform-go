@@ -28,7 +28,9 @@ func (h *Auth) LoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 		return
 	}
-	render(w, r, http.StatusOK, pages.Login(pages.LoginProps{}))
+	render(w, r, http.StatusOK, pages.Login(pages.LoginProps{
+			Notice: h.sessions.PopString(r.Context(), "flash"),
+		}))
 }
 
 func (h *Auth) LoginSubmit(w http.ResponseWriter, r *http.Request) {
@@ -79,8 +81,9 @@ func (h *Auth) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "something went wrong", http.StatusInternalServerError)
 		return
 	}
-	h.sessions.Put(r.Context(), auth.SessionUserKey, user.ID)
+	h.sessions.Put(r.Context(), auth.SessionUserKey, int(user.TokenVersion))
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+
 }
 
 func (h *Auth) Logout(w http.ResponseWriter, r *http.Request) {

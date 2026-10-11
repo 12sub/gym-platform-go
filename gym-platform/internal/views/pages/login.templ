@@ -12,6 +12,7 @@ import (
 type LoginProps struct {
 	Email string
 	Error string
+	Notice string
 }
 
 templ Login(p LoginProps) {
@@ -32,6 +33,13 @@ templ Login(p LoginProps) {
 					}
 					@card.Content() {
 						<form method="POST" action="/login" class="space-y-4">
+							if p.Notice != "" {
+								@alert.Alert() {
+									@alert.Description() {
+										{ p.Notice }
+									}
+								}
+							}
 							if p.Error != "" {
 								@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
 									@alert.Description() {
@@ -73,6 +81,7 @@ templ Login(p LoginProps) {
 							@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
 								Log in
 							}
+							<p class="mt-4 text-center text-xs text-muted-foreground">Forgot your password? Ask the owner for a reset link.</p>
 						</form>
 					}
 				}
